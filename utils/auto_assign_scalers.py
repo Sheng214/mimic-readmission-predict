@@ -1,3 +1,5 @@
+import numpy as np
+
 # Function to automatically classify variables into scalers based on statistical thresholds and predefined ordinal variables
 def auto_assign_scalers(df, feat2scale, ordinal_vars=None):
     """

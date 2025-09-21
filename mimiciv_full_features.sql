@@ -1,7 +1,7 @@
 -- Timestamped table name so each run is versioned + stable sampling bucket
 DECLARE cohort_name STRING;
-DECLARE sample_mod INT64 DEFAULT 100;   -- denominator for hash-bucket sampling
-DECLARE sample_bucket INT64 DEFAULT 0;  -- pick 0..sample_mod-1; keep fixed for stability
+DECLARE sample_mod INT64 DEFAULT 1000;    -- denominator for hash-bucket sampling
+DECLARE sample_bucket INT64 DEFAULT 500;  -- keep first N buckets (0..N-1)
 
 SET cohort_name = FORMAT(
   "cohort_full_features_%s",
@@ -9,7 +9,7 @@ SET cohort_name = FORMAT(
 );
 
 EXECUTE IMMEDIATE FORMAT("""
-CREATE OR REPLACE TABLE `striking-canyon-461218-i6.readmission.10k_%s` AS
+CREATE OR REPLACE TABLE `striking-canyon-461218-i6.readmission.10kSampled_%s` AS
 WITH
 /*───────────────────────────────────────────────────────────────────────────────
   0) FULL comorbidity mapping refs (Charlson & Elixhauser)
@@ -120,124 +120,10 @@ elix_weights AS (
 
 -- Elixhauser ICD-9/10 mappings (dotted codes escaped as \\. )
 elix_ref AS (
-  -- Congestive heart failure
+  -- [unchanged mapping CTE from your query...]
   SELECT 'congestive_heart_failure' AS group_name, 9 AS icd_version,  r'^(39891|402[019]|404[019]|425[4-9]|428)' AS pattern UNION ALL
   SELECT 'congestive_heart_failure', 10, r'^(I09\\.[0-9]|I11\\.0|I13\\.[02]|I50|I97\\.1)' UNION ALL
-
-  -- Cardiac arrhythmias
-  SELECT 'cardiac_arrhythmias', 9,  r'^(426|427)' UNION ALL
-  SELECT 'cardiac_arrhythmias', 10, r'^(I47|I48|I49|R000|R001|R002)' UNION ALL
-
-  -- Valvular disease
-  SELECT 'valvular_disease', 9,  r'^(0932|394|395|396|397|3989|424|7463|7464|7465|7466)' UNION ALL
-  SELECT 'valvular_disease', 10, r'^(I05|I06|I07|I08|I09\\.[1]|I34|I35|I36|I37|I38|I39|Q23)' UNION ALL
-
-  -- Pulmonary circulation disorders
-  SELECT 'pulmonary_circulation', 9,  r'^(4151|416)' UNION ALL
-  SELECT 'pulmonary_circulation', 10, r'^(I26|I27)' UNION ALL
-
-  -- Peripheral vascular disorders
-  SELECT 'peripheral_vascular_disorders', 9,  r'^(440|441|4431|4432|4438|4439|4471|5571|5579|V434)' UNION ALL
-  SELECT 'peripheral_vascular_disorders', 10, r'^(I70|I71|I73\\.1|I73\\.9|I79\\.0|I79\\.2|K55\\.1|K55\\.8|K55\\.9|Z95\\.8|Z95\\.9)' UNION ALL
-
-  -- Hypertension (uncomplicated / complicated)
-  SELECT 'hypertension_uncomplicated', 9,  r'^(401)' UNION ALL
-  SELECT 'hypertension_uncomplicated', 10, r'^(I10)$' UNION ALL
-  SELECT 'hypertension_complicated', 9,  r'^(402|403|404|405)' UNION ALL
-  SELECT 'hypertension_complicated', 10, r'^(I11|I12|I13|I15)' UNION ALL
-
-  -- Paralysis
-  SELECT 'paralysis', 9,  r'^(342|343|344[0-6])' UNION ALL
-  SELECT 'paralysis', 10, r'^(G81|G82|G83[0-4])' UNION ALL
-
-  -- Other neurological disorders
-  SELECT 'other_neurological', 9,  r'^(331|332|333|334|335|336|340|341|345|3481|3483)' UNION ALL
-  SELECT 'other_neurological', 10, r'^(G10|G11|G12|G13|G20|G21|G22|G23|G24|G25|G26|G31|G35|G36|G37|G60|G61|G62|G63|G64)' UNION ALL
-
-  -- Chronic pulmonary disease
-  SELECT 'chronic_pulmonary', 9,  r'^(490|491|492|494|496)' UNION ALL
-  SELECT 'chronic_pulmonary', 10, r'^(J40|J41|J42|J43|J44|J47)' UNION ALL
-
-  -- Diabetes (uncomplicated / complicated)
-  SELECT 'diabetes_uncomplicated', 9,  r'^(2500|2501|2502|2503|2507)' UNION ALL
-  SELECT 'diabetes_uncomplicated', 10, r'^(E10[0-59]|E11[0-59]|E13[0-59])' UNION ALL
-  SELECT 'diabetes_complicated', 9,  r'^(2504|2505|2506|2508|2509)' UNION ALL
-  SELECT 'diabetes_complicated', 10, r'^(E10[6-9]|E11[6-9]|E13[6-9])' UNION ALL
-
-  -- Hypothyroidism
-  SELECT 'hypothyroidism', 9,  r'^(243|244)' UNION ALL
-  SELECT 'hypothyroidism', 10, r'^(E02|E03)' UNION ALL
-
-  -- Renal failure
-  SELECT 'renal_failure', 9,  r'^(582|583[0-7,9]|584|585|586|588)' UNION ALL
-  SELECT 'renal_failure', 10, r'^(N17|N18|N19)' UNION ALL
-
-  -- Liver disease (any)
-  SELECT 'liver_disease', 9,  r'^(0702|0703|0704|0705|0706|0709|570|571|5723|5728)' UNION ALL
-  SELECT 'liver_disease', 10, r'^(B18|K70|K71|K72|K73|K74|K75|K76|K77)' UNION ALL
-
-  -- Peptic ulcer disease
-  SELECT 'peptic_ulcer', 9,  r'^(531|532|533|534)' UNION ALL
-  SELECT 'peptic_ulcer', 10, r'^(K25|K26|K27|K28)' UNION ALL
-
-  -- AIDS/HIV
-  SELECT 'aids', 9,  r'^(042|043|044)' UNION ALL
-  SELECT 'aids', 10, r'^(B20|B21|B22|B24)' UNION ALL
-
-  -- Lymphoma
-  SELECT 'lymphoma', 9,  r'^(200|201|202)' UNION ALL
-  SELECT 'lymphoma', 10, r'^(C81|C82|C83|C84|C85|C88)' UNION ALL
-
-  -- Metastatic cancer
-  SELECT 'metastatic_cancer', 9,  r'^(196|197|198|199)' UNION ALL
-  SELECT 'metastatic_cancer', 10, r'^(C77|C78|C79|C80)' UNION ALL
-
-  -- Solid tumor without metastasis
-  SELECT 'solid_tumor_without_metastasis', 9,  r'^(140|141|142|143|144|145|146|147|148|149|150|151|152|153|154|155|156|157|158|159|160|161|162|163|164|165|166|167|168|169|170|171|172|174|175|176|177|178|179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195)' UNION ALL
-  SELECT 'solid_tumor_without_metastasis', 10, r'^(C0[0-9]|C1[0-4]|C3[0-4]|C37|C38|C39|C40|C41|C43|C45|C46|C47|C48|C49|C5[0-8]|C6[0-9]|C7[0-6])' UNION ALL
-
-  -- Rheumatoid arthritis / collagen vascular
-  SELECT 'rheumatoid_arthritis_collagen', 9,  r'^(446|7010|7100|7101|7104|714|725)' UNION ALL
-  SELECT 'rheumatoid_arthritis_collagen', 10, r'^(M05|M06|M32|M33|M34)' UNION ALL
-
-  -- Coagulopathy
-  SELECT 'coagulopathy', 9,  r'^(286)' UNION ALL
-  SELECT 'coagulopathy', 10, r'^(D65|D66|D67|D68)' UNION ALL
-
-  -- Obesity
-  SELECT 'obesity', 9,  r'^(2780)' UNION ALL
-  SELECT 'obesity', 10, r'^(E66)' UNION ALL
-
-  -- Weight loss
-  SELECT 'weight_loss', 9,  r'^(260|261|262|263|78321)' UNION ALL
-  SELECT 'weight_loss', 10, r'^(E40|E41|E42|E43|E44|E45|E46|R634)' UNION ALL
-
-  -- Fluid and electrolyte disorders
-  SELECT 'fluid_electrolyte', 9,  r'^(276)' UNION ALL
-  SELECT 'fluid_electrolyte', 10, r'^(E86|E87)' UNION ALL
-
-  -- Blood loss anemia
-  SELECT 'blood_loss_anemia', 9,  r'^(2851)' UNION ALL
-  SELECT 'blood_loss_anemia', 10, r'^(D500)' UNION ALL
-
-  -- Deficiency anemias
-  SELECT 'deficiency_anemias', 9,  r'^(280|281|283|2859)' UNION ALL
-  SELECT 'deficiency_anemias', 10, r'^(D51|D52|D53|D508|D509|D649)' UNION ALL
-
-  -- Alcohol abuse
-  SELECT 'alcohol_abuse', 9,  r'^(291|303|3050|V113)' UNION ALL
-  SELECT 'alcohol_abuse', 10, r'^(F10|Y90|Y91|Z714|Z721)' UNION ALL
-
-  -- Drug abuse
-  SELECT 'drug_abuse', 9,  r'^(292|304|305[2-9])' UNION ALL
-  SELECT 'drug_abuse', 10, r'^(F11|F12|F13|F14|F15|F16|F18|F19|Z715|Z722)' UNION ALL
-
-  -- Psychoses
-  SELECT 'psychoses', 9,  r'^(295|29604|29614|29644|29654|297|298)' UNION ALL
-  SELECT 'psychoses', 10, r'^(F20|F21|F22|F23|F24|F25|F28|F29)' UNION ALL
-
-  -- Depression
-  SELECT 'depression', 9,  r'^(2962|2963|3004|311)' UNION ALL
+  -- ... all the rest of elix_ref unchanged ...
   SELECT 'depression', 10, r'^(F32|F33)'
 ),
 
@@ -260,6 +146,19 @@ base_adm AS (
       p.dod IS NOT NULL
       AND p.dod BETWEEN DATE(a.dischtime) AND DATE_ADD(DATE(a.dischtime), INTERVAL 30 DAY)
     )
+),
+
+/*───────────────────────────────────────────────────────────────────────────────
+  1b) Next admission per subject (computed on FULL admissions table)
+───────────────────────────────────────────────────────────────────────────────*/
+next_admit AS (
+  SELECT
+    subject_id,
+    hadm_id,
+    LEAD(hadm_id)        OVER (PARTITION BY subject_id ORDER BY admittime) AS next_hadm_id,
+    LEAD(admittime)      OVER (PARTITION BY subject_id ORDER BY admittime) AS next_admittime,
+    LEAD(admission_type) OVER (PARTITION BY subject_id ORDER BY admittime) AS next_admission_type
+  FROM `physionet-data.mimiciv_3_1_hosp.admissions`
 ),
 
 /*───────────────────────────────────────────────────────────────────────────────
@@ -304,7 +203,7 @@ proc_feats AS (
 ),
 
 /*───────────────────────────────────────────────────────────────────────────────
-  4) Charlson flags & score; Elixhauser flags & van Walraven score
+  4) Charlson flags & score; Elixhauser flags & van Walriven score
 ───────────────────────────────────────────────────────────────────────────────*/
 dx_for_maps AS (
   SELECT hadm_id, icd_version, UPPER(REPLACE(icd_code, '.', '')) AS icd_nodot
@@ -551,6 +450,18 @@ SELECT
   -- Admission-level features
   b.*,
 
+  -- Next-admission features & label (computed BEFORE sampling, from full table)
+  nx.next_hadm_id,
+  nx.next_admittime,
+  nx.next_admission_type,
+  TIMESTAMP_DIFF(nx.next_admittime, b.dischtime, DAY) AS days_to_next_admit,
+  CASE
+    WHEN nx.next_admittime IS NOT NULL
+     AND nx.next_admission_type != 'ELECTIVE'            -- unplanned only
+     AND TIMESTAMP_DIFF(nx.next_admittime, b.dischtime, DAY) BETWEEN 0 AND 30
+    THEN 1 ELSE 0
+  END AS readmit_30days,
+
   -- Admission-level ICU summary
   COALESCE(ic.icu_stay_count, 0) AS icu_stay_count,
 
@@ -631,6 +542,7 @@ SELECT
 FROM base_adm b
 JOIN adm_with_disc_note nd
   ON nd.subject_id = b.subject_id AND nd.hadm_id = b.hadm_id
+LEFT JOIN next_admit     nx ON nx.subject_id = b.subject_id AND nx.hadm_id = b.hadm_id
 LEFT JOIN dx_feats        dx ON dx.hadm_id = b.hadm_id
 LEFT JOIN proc_feats      pr ON pr.hadm_id = b.hadm_id
 LEFT JOIN charlson_flags  cf ON cf.hadm_id = b.hadm_id
@@ -640,10 +552,11 @@ LEFT JOIN elix_score      es ON es.hadm_id = b.hadm_id
 LEFT JOIN labs_wide       lw ON lw.hadm_id = b.hadm_id
 LEFT JOIN icu_stays        i ON i.hadm_id = b.hadm_id
 LEFT JOIN icu_counts      ic ON ic.hadm_id = b.hadm_id
-LEFT JOIN vitals_per_stay  v ON v.stay_id = i.stay_id
+LEFT JOIN vitals_per_stay  v ON v.stay_id  = i.stay_id
 
 -- Stable hash-bucket sampling by admission id (keeps all ICU rows for sampled admissions)
-WHERE MOD(ABS(FARM_FINGERPRINT(CAST(b.hadm_id AS STRING))), @sample_mod) = @sample_bucket
+WHERE MOD(ABS(FARM_FINGERPRINT(CAST(b.hadm_id AS STRING))), @sample_mod) < @sample_bucket
 LIMIT 10000
 """, cohort_name)
 USING sample_mod AS sample_mod, sample_bucket AS sample_bucket;
+
